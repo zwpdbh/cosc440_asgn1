@@ -27,10 +27,10 @@ __attribute__((section("__versions"))) = {
 	{ 0x32a397eb, __VMLINUX_SYMBOL_STR(cdev_add) },
 	{ 0x934e3b0d, __VMLINUX_SYMBOL_STR(cdev_init) },
 	{ 0x29537c9e, __VMLINUX_SYMBOL_STR(alloc_chrdev_region) },
-	{ 0x28cc25db, __VMLINUX_SYMBOL_STR(arm_copy_from_user) },
-	{ 0xfa2a45e, __VMLINUX_SYMBOL_STR(__memzero) },
 	{ 0x37a0cba, __VMLINUX_SYMBOL_STR(kfree) },
 	{ 0x6b321efe, __VMLINUX_SYMBOL_STR(__free_pages) },
+	{ 0xfa2a45e, __VMLINUX_SYMBOL_STR(__memzero) },
+	{ 0x28cc25db, __VMLINUX_SYMBOL_STR(arm_copy_from_user) },
 	{ 0xe5e85202, __VMLINUX_SYMBOL_STR(contig_page_data) },
 	{ 0xdfc98939, __VMLINUX_SYMBOL_STR(__alloc_pages_nodemask) },
 	{ 0xce23173e, __VMLINUX_SYMBOL_STR(kmem_cache_alloc_trace) },
@@ -48,4 +48,4 @@ __attribute__((section(".modinfo"))) =
 "depends=";
 
 
-MODULE_INFO(srcversion, "FBE4709B3C7A2785C253AA9");
+MODULE_INFO(srcversion, "94F72AF27F2921B0AF74688");

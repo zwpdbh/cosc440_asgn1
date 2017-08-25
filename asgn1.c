@@ -1,4 +1,3 @@
-
 /**
  * File: asgn1.c
  * Date: 13/03/2011
@@ -175,6 +174,13 @@ int asgn1_release (struct inode *inode, struct file *filp) {
     /**
      * decrement process count
      */
+    struct asgn1_dev_t *dev = filp->private_data;
+    
+    printk(KERN_WARNING "In release:\n");
+    printk(KERN_WARNING "the dev->data_size = %d\n", dev->data_size);
+    printk(KERN_WARNING "=======END====\n");
+    printk(KERN_WARNING "\n\n\n");
+    
     return 0;
 }
 
@@ -185,128 +191,84 @@ int asgn1_release (struct inode *inode, struct file *filp) {
  */
 ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
                    loff_t *f_pos) {
+    /*record offset in current page*/
+    size_t offset;
     
-    /* the offset from the beginning of a page to start reading */
-    size_t begin_offset;
-    
-    /* the amout of data need to read*/
     size_t unfinished;
-    /* the amout of data need to read in one page*/
-    size_t finished_in_one_page;
-    size_t unfinished_in_this_page;
-    size_t should_finish_in_this_page;
-    size_t unfinished_in_this_page_record;
+    size_t unfinished_recored;
+    size_t finished;
+    size_t total_finished;
     
-    /* the first page which contains the requested data */
-    int begin_page_no = *f_pos / PAGE_SIZE;
+    int page_no;
+    int curr_page_no;
     
-    /* the current page number */
-    int curr_page_no = 0;
+    struct asgn1_dev_t *dev;
+    struct list_head *ptr;
+    struct page_node_rec *page_ptr;
     
-    struct asgn1_dev_t *dev = filp->private_data;
-    struct list_head *ptr = dev->mem_list.next;
+    dev = filp->private_data;
+    ptr = dev->mem_list.next;
     
-    unsigned int first_one = 1;
+    total_finished = 0;
     
-    page_node *curr_page_node_ptr;
-    
-    printk(KERN_WARNING "\n\n\n");
-    printk(KERN_WARNING "============Before reading==========\n");
-    printk(KERN_WARNING "dev->num_pages = %d\n", dev->num_pages);
-    printk(KERN_WARNING "count = %zu\n", count);
-    
-    printk(KERN_WARNING "comparing *f_pos with dev->data_size...\n");
-    printk(KERN_WARNING "*f_pos = %lld, data_size = %zu\n", *f_pos, dev->data_size);
-    /*if beyong data size, return 0*/
+    /*if the seeking position is bigger than the data_size, return 0*/
     if (*f_pos >= dev->data_size) {
-        printk(KERN_WARNING "because *f_pos >= dev->data_size, SO return 0");
         return 0;
     }
     
-    unfinished = count;
-    /*the data need to be sent to user should not exceed data_size*/
-    printk(KERN_WARNING "computing valid unfinished work");
-    if (*f_pos + count > dev->data_size) {
-        printk(KERN_WARNING "because *f_pos + count = %lld, dev->data_size = %zu\n", *f_pos + count, dev->data_size);
-        unfinished = dev->data_size - *f_pos;
-        printk(KERN_WARNING "SO set unfinished = %zu\n", unfinished);
-        count = unfinished;
+    page_no = *f_pos / PAGE_SIZE;
+    curr_page_no = 0;
+    
+    /*find the starting page*/
+    while (curr_page_no < page_no && curr_page_no <= dev->num_pages) {
+        ptr = ptr->next;
+        curr_page_no += 1;
     }
 
     
-    /*1. find the first requested page*/
-    while (curr_page_no < begin_page_no) {
-        ptr = ptr->next;
-        curr_page_no += 1;
+    /*check the limit of amount of work needed to be done*/
+    if (*f_pos + count > dev->data_size) {
+        unfinished = dev->data_size - *f_pos;
+    } else {
+        unfinished = count;
     }
     
-    while (unfinished >0) {
-        curr_page_node_ptr = list_entry(ptr, page_node, list);
-        
-        if (first_one == 1) {
-            begin_offset = *f_pos % PAGE_SIZE;
-        } else {
-            begin_offset = 0;
-        }
-        
-        /*process in one page*/
-        printk(KERN_WARNING "\n");
-        printk(KERN_WARNING "==processing in the %dth page==\n", curr_page_no);
-        printk(KERN_WARNING "unfinished = %zu\n", unfinished);
-        printk(KERN_WARNING "begin_offset = %zu\n", begin_offset);
-        printk(KERN_WARNING "PAGE_SIZE - begin_offset = %lu\n", PAGE_SIZE - begin_offset);
-        
-        printk(KERN_WARNING "==computing the work needed to be done in this page...\n");
-        if (unfinished > PAGE_SIZE - begin_offset) {
-            printk(KERN_WARNING "because unfinished > PAGE_SIZE - begin_offset, SO\n");
-            unfinished_in_this_page = PAGE_SIZE - begin_offset;
-        } else {
-            printk(KERN_WARNING "because unfinished <= PAGE_SIZE - begin_offset, SO\n");
-            unfinished_in_this_page = unfinished;
-        }
-        
-        printk(KERN_WARNING "unfinished_in_this_page = %zu\n", unfinished_in_this_page);
-        
-        should_finish_in_this_page = unfinished_in_this_page;
-        unfinished_in_this_page_record = unfinished_in_this_page;
-        
-        printk(KERN_WARNING "\n\n");
-        printk(KERN_WARNING "we need to read %zu amout of data from the %dth page", should_finish_in_this_page, curr_page_no);
-        
-        do {
-            printk(KERN_WARNING "we are going to read %d amout of data from page %d, offset is %zu\n", unfinished_in_this_page, curr_page_no, begin_offset);
-            unfinished_in_this_page = copy_to_user(buf, page_address(curr_page_node_ptr->page) + begin_offset, unfinished_in_this_page);
-            printk(KERN_WARNING "finished reading for %d amount of data\n", unfinished_in_this_page_record - unfinished_in_this_page);
-            buf += (unfinished_in_this_page_record - unfinished_in_this_page);
-            
-            begin_offset += (unfinished_in_this_page_record - unfinished_in_this_page);
-            unfinished_in_this_page_record = unfinished_in_this_page;
-        } while (unfinished_in_this_page > 0);
-        /*end of processing in one page*/
-        
-        *f_pos += should_finish_in_this_page;
-        printk(KERN_WARNING "change *f_pos to: %lld\n", *f_pos);
-        filp->f_pos = *f_pos;
-        
-        printk(KERN_WARNING "we succeed in read %d amout of data from the the %dth page\n", should_finish_in_this_page, curr_page_no);
-        
-        unfinished -= should_finish_in_this_page;
-        printk(KERN_WARNING "there are %d amout of data left to read\n\n", unfinished);
-        
-        ptr = ptr->next;
-        curr_page_no += 1;
-        first_one += 1;
-    }
-    
-    
-    printk(KERN_WARNING "=======after reading...========\n");
-    printk(KERN_WARNING "unfinished reading amout of data is: %zu\n", unfinished);
-    printk(KERN_WARNING "finished reading %zu - %zu = total %zu amout of data\n\n", count, unfinished, count - unfinished);
-    printk(KERN_WARNING "*f_pos = %lld\n", *f_pos);
-    printk(KERN_WARNING "filp->f_pos = %lld\n", filp->f_pos);
-    printk(KERN_WARNING "return %zu\n", count - unfinished);
     printk(KERN_WARNING "\n\n\n");
-    return count - unfinished;
+    printk(KERN_WARNING "======READING========\n");
+    printk(KERN_WARNING "unfinished = %d\n", unfinished);
+    
+    do {
+        
+        offset = *f_pos % PAGE_SIZE;
+        page_no = *f_pos / PAGE_SIZE;
+        
+        if (page_no != curr_page_no) {
+            printk(KERN_WARNING "curr_page_no = %d, *f_pos / PAGE_SIZE = page_no = %d", curr_page_no, page_no);
+            ptr = ptr->next;
+            curr_page_no += 1;
+            printk(KERN_WARNING "go to next page: %d\n", curr_page_no);
+        }
+        page_ptr = list_entry(ptr, page_node, list);
+        
+        unfinished_recored = unfinished;
+        if (unfinished > PAGE_SIZE - offset) {
+            unfinished = copy_to_user(buf, (page_address(page_ptr->page) + offset), PAGE_SIZE - offset);
+        } else {
+            unfinished = copy_to_user(buf, (page_address(page_ptr->page) + offset), unfinished);
+        }
+        
+        finished = unfinished_recored - unfinished;
+        printk(KERN_WARNING "finished = %d, unfinished = %d\n", finished, unfinished);
+        
+        total_finished += finished;
+        
+        buf += finished;
+        *f_pos += finished;
+    } while (unfinished >0 && curr_page_no <= dev->num_pages);
+    
+    printk(KERN_WARNING "===END of READING, return %d===\n", total_finished);
+    printk(KERN_WARNING "\n\n\n");
+    return total_finished;
 }
 
 
@@ -389,117 +351,78 @@ void allocate_new_pages_based_on(struct asgn1_dev_t *dev, size_t count, loff_t *
  * module
  */
 ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos) {
+    
+    /*record offset in current page*/
+    size_t offset;
+    
+    size_t unfinished;
+    size_t unfinished_recored;
+    size_t finished;
+    size_t total_finished;
+    
+    int page_no;
+    int curr_page_no;
+    
+    struct asgn1_dev_t *dev;
+    struct list_head *ptr;
+    struct page_node_rec *page_ptr;
     size_t orig_f_pos = *f_pos;
-    size_t size_written = 0;
-    size_t begin_offset;
-    size_t unfinished_in_this_page;
-    size_t unfinished_in_this_page_record;
-    size_t should_finish_in_this_page;
-    size_t unfinished = count;
     
-    /* the first page this finction should start writing to */
-    int begin_page_no = *f_pos / PAGE_SIZE;
-    int curr_page_no = 0;     /* the current page number */
+    dev = filp->private_data;
+    ptr = dev->mem_list.next;
     
-    struct asgn1_dev_t *dev = filp->private_data;
-    struct list_head *ptr = dev->mem_list.next;
-    page_node *curr_page_node_ptr;
+    unfinished = count;
+    total_finished = 0;
     
-    unsigned int first_one = 1;
-    
-    printk(KERN_WARNING "\n\n\n");
-    printk(KERN_WARNING "==============before writing==========");
-    printk(KERN_WARNING "the data size stored in device is %zu\n", dev->data_size);
-    printk(KERN_WARNING "before writing, there are %d pages available\n", dev->num_pages);
-    printk(KERN_WARNING "data need to write is count = %zu\n", count);
-    printk(KERN_WARNING "the *f_pos passed in is: %lld\n", *f_pos);
-    
-    allocate_new_pages_based_on(dev, unfinished, f_pos);
-    
-    printk(KERN_WARNING "literate to get the first page");
-    while (curr_page_no < begin_page_no) {
-        ptr = ptr->next;
-        curr_page_no += 1;
+    /*num_pages is indexed from 1, page_no is indexed from 0*/
+    if (dev->num_pages < page_no + 1) {
+        add_pages(dev, page_no + 1 - dev->num_pages);
     }
-    
-    printk(KERN_WARNING "we need to write %zu amout of data\n", count);
-    while (unfinished > 0) {
-        curr_page_node_ptr = list_entry(ptr, page_node, list);
-        
-        if (first_one == 1) {
-            begin_offset = *f_pos % PAGE_SIZE;
-        } else {
-            begin_offset = 0;
-        }
-        
-        /*process in one page*/
-        printk(KERN_WARNING "\n");
-        printk(KERN_WARNING "==processing in the %dth page==\n", curr_page_no);
-        printk(KERN_WARNING "unfinished = %zu\n", unfinished);
-        printk(KERN_WARNING "begin_offset = %zu\n", begin_offset);
-        printk(KERN_WARNING "PAGE_SIZE - begin_offset = %lu\n", PAGE_SIZE - begin_offset);
-        
-        if (unfinished > PAGE_SIZE - begin_offset) {
-            printk(KERN_WARNING "because unfinished > PAGE_SIZE - begin_offset, SO\n");
-            unfinished_in_this_page = PAGE_SIZE - begin_offset;
-            printk(KERN_WARNING "set unfinished_in_this_page = PAGE_SIZE - begin_offset = %zu\n", unfinished_in_this_page);
-        } else {
-            printk(KERN_WARNING "because unfinished < PAGE_SIZE - begin_offset, SO\n");
-            unfinished_in_this_page = unfinished;
-            printk(KERN_WARNING "set unfinished_in_this_page = unfinished = %zu\n", unfinished);
-        }
-        
-        should_finish_in_this_page = unfinished_in_this_page;
-        unfinished_in_this_page_record = unfinished_in_this_page;
-        
-        printk(KERN_WARNING "\n");
-        printk(KERN_WARNING "we need to write %zu amout of data into the %dth page", should_finish_in_this_page, curr_page_no);
-        
-        do {
-            printk(KERN_WARNING "we are going to write %d amout of data at page %d, offset is %zu\n", unfinished_in_this_page, curr_page_no, begin_offset);
-            unfinished_in_this_page = copy_from_user(page_address(curr_page_node_ptr->page) + begin_offset, buf, unfinished_in_this_page);
-            printk(KERN_WARNING "finished writing for %d amount of data\n", unfinished_in_this_page_record - unfinished_in_this_page);
-            buf += (unfinished_in_this_page_record - unfinished_in_this_page);
-            
-            begin_offset += (unfinished_in_this_page_record - unfinished_in_this_page);
-            unfinished_in_this_page_record = unfinished_in_this_page;
-        } while (unfinished_in_this_page > 0);
-        /*end of processing in one page*/
-        
-        
-        printk(KERN_WARNING "we succeed in writing %d amout of data into the the %dth page\n", should_finish_in_this_page, curr_page_no);
-        
-        
-        
-        unfinished -= should_finish_in_this_page;
-        printk(KERN_WARNING "there are %d amout of data left to write\n", unfinished);
-        
-        ptr = ptr->next;
-        curr_page_no += 1;
-        first_one += 1;
-    }
-    
-    
-    printk(KERN_WARNING "======after writing...\n");
-    printk(KERN_WARNING "size_written = count - unfinished\n");
-    printk(KERN_WARNING "size_written = %zu - %zu\n", count, unfinished);
-    size_written = count - unfinished;
-    printk(KERN_WARNING "size_written = %zu\n", size_written);
 
-    printk(KERN_WARNING "*f_pos += size_written\n");
-    printk(KERN_WARNING "*f_pos = %lld\n", *f_pos);
-    printk(KERN_WARNING "size_written = %zu\n", size_written);
-    *f_pos = *f_pos + size_written;
-    printk(KERN_WARNING "So set *f_pos = %lld\n\n", *f_pos);
-    printk(KERN_WARNING "dev->data_size = %zu\n", dev->data_size);
-    printk(KERN_WARNING "orig_f_pos + size_written = %zu + %zu = %zu\n", orig_f_pos, size_written, orig_f_pos + size_written);
-    printk(KERN_WARNING "while dev->data_size = %zu\n", dev->data_size);
-    printk(KERN_WARNING "Since, dev->data_size = max(dev->data_size, orig_f_pos + size_written)");
-    dev->data_size = max(dev->data_size, orig_f_pos + size_written);
-    printk(KERN_WARNING "SO dev->data_size = %d\n", dev->data_size);
-    printk(KERN_WARNING "\n\n\n");
+    /*find the starting page*/
+    while (curr_page_no < page_no && curr_page_no <= dev->num_pages) {
+        ptr = ptr->next;
+        curr_page_no += 1;
+    }
     
-    return size_written;
+    printk(KERN_WARNING "\n\n\n");
+    printk(KERN_WARNING "======WRITING========\n");
+    printk(KERN_WARNING "unfinished = %d\n", unfinished);
+    do {
+        
+        page_no = *f_pos / PAGE_SIZE;
+        offset = *f_pos / PAGE_SIZE;
+        
+        if (page_no != curr_page_no && unfinished > 0) {
+            printk(KERN_WARNING "curr_page_no = %d, *f_pos / PAGE_SIZE = page_no = %d", curr_page_no, page_no);
+            printk(KERN_WARNING "add one new page\n");
+            add_pages(dev, 1);
+            ptr = ptr->next;
+            curr_page_no += 1;
+            printk(KERN_WARNING "go to next page: %d\n", curr_page_no);
+        }
+        
+        page_ptr = list_entry(ptr, page_node, list);
+        
+        unfinished_recored = unfinished;
+        if (unfinished < PAGE_SIZE - offset) {
+            unfinished = copy_from_user(page_address(page_ptr->page) + offset, buf, unfinished);
+        } else {
+            unfinished = copy_from_user(page_address(page_ptr->page) + offset, buf, PAGE_SIZE - offset);
+        }
+        
+        finished = unfinished_recored - unfinished;
+        total_finished += finished;
+        buf += finished;
+        *f_pos += finished;
+        
+    } while (unfinished > 0);
+    
+    dev->data_size = max(dev->data_size, orig_f_pos + finished);
+    
+    printk(KERN_WARNING "===END of WRITING, return %d===\n", total_finished);
+    printk(KERN_WARNING "\n\n\n");
+    return total_finished;
 }
 
 #define SET_NPROC_OP 1
@@ -717,5 +640,3 @@ void __exit asgn1_exit_module(void){
 
 module_init(asgn1_init_module);
 module_exit(asgn1_exit_module);
-
-
