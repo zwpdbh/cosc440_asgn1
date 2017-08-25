@@ -212,27 +212,27 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
     
     printk(KERN_WARNING "\n\n\n");
     printk(KERN_WARNING "============Before reading==========\n");
-    printk(KERN_WARNING "dev->data_size = %zu\n", dev->data_size);
     printk(KERN_WARNING "dev->num_pages = %d\n", dev->num_pages);
-    printk(KERN_WARNING "data to be read is count = %zu\n", count);
-    printk(KERN_WARNING "the *f_pos passed in is: %zu\n", *f_pos);
+    printk(KERN_WARNING "count = %zu\n", count);
     
+    printk(KERN_WARNING "comparing *f_pos with dev->data_size...\n");
+    printk(KERN_WARNING "*f_pos = %lld, data_size = %zu\n", *f_pos, dev->data_size);
     /*if beyong data size, return 0*/
     if (*f_pos >= dev->data_size) {
-        printk(KERN_WARNING "comparing *f_pos with dev->data_size...\n");
-        printk(KERN_WARNING "*f_pos = %zu, data_size = %zu\n", *f_pos, dev->data_size);
         printk(KERN_WARNING "because *f_pos >= dev->data_size, SO return 0");
         return 0;
     }
     
     unfinished = count;
     /*the data need to be sent to user should not exceed data_size*/
+    printk(KERN_WARNING "computing valid unfinished work");
     if (*f_pos + count > dev->data_size) {
-        printk(KERN_WARNING "because *f_pos + count = %zu, dev->data_size = %zu\n", *f_pos + count, dev->data_size);
-        
+        printk(KERN_WARNING "because *f_pos + count = %lld, dev->data_size = %zu\n", *f_pos + count, dev->data_size);
         unfinished = dev->data_size - *f_pos;
         printk(KERN_WARNING "SO set unfinished = %zu\n", unfinished);
+        count = unfinished;
     }
+
     
     /*1. find the first requested page*/
     while (curr_page_no < begin_page_no) {
@@ -256,15 +256,16 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
         printk(KERN_WARNING "begin_offset = %zu\n", begin_offset);
         printk(KERN_WARNING "PAGE_SIZE - begin_offset = %lu\n", PAGE_SIZE - begin_offset);
         
+        printk(KERN_WARNING "==computing the work needed to be done in this page...\n");
         if (unfinished > PAGE_SIZE - begin_offset) {
             printk(KERN_WARNING "because unfinished > PAGE_SIZE - begin_offset, SO\n");
             unfinished_in_this_page = PAGE_SIZE - begin_offset;
-            printk(KERN_WARNING "set unfinished_in_this_page = PAGE_SIZE - begin_offset = %zu\n", unfinished_in_this_page);
         } else {
-            printk(KERN_WARNING "because unfinished < PAGE_SIZE - begin_offset, SO\n");
+            printk(KERN_WARNING "because unfinished <= PAGE_SIZE - begin_offset, SO\n");
             unfinished_in_this_page = unfinished;
-            printk(KERN_WARNING "set unfinished_in_this_page = unfinished = %zu\n", unfinished);
         }
+        
+        printk(KERN_WARNING "unfinished_in_this_page = %zu\n", unfinished_in_this_page);
         
         should_finish_in_this_page = unfinished_in_this_page;
         unfinished_in_this_page_record = unfinished_in_this_page;
@@ -284,7 +285,7 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
         /*end of processing in one page*/
         
         *f_pos += should_finish_in_this_page;
-        printk(KERN_WARNING "change *f_pos to: %zu\n", *f_pos);
+        printk(KERN_WARNING "change *f_pos to: %lld\n", *f_pos);
         filp->f_pos = *f_pos;
         
         printk(KERN_WARNING "we succeed in read %d amout of data from the the %dth page\n", should_finish_in_this_page, curr_page_no);
@@ -298,13 +299,14 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
     }
     
     
-    printk(KERN_WARNING "=======after reading...\n");
+    printk(KERN_WARNING "=======after reading...========\n");
     printk(KERN_WARNING "unfinished reading amout of data is: %zu\n", unfinished);
     printk(KERN_WARNING "finished reading %zu - %zu = total %zu amout of data\n\n", count, unfinished, count - unfinished);
-    printk(KERN_WARNING "*f_pos = %zu\n", *f_pos);
-    printk(KERN_WARNING "filp->f_pos = %zu\n", filp->f_pos);
-        return count - unfinished;
+    printk(KERN_WARNING "*f_pos = %lld\n", *f_pos);
+    printk(KERN_WARNING "filp->f_pos = %lld\n", filp->f_pos);
+    printk(KERN_WARNING "return %zu\n", count - unfinished);
     printk(KERN_WARNING "\n\n\n");
+    return count - unfinished;
 }
 
 
@@ -359,7 +361,7 @@ void allocate_new_pages_based_on(struct asgn1_dev_t *dev, size_t count, loff_t *
     size_t differences;
     
     printk(KERN_WARNING "=======preparing writing=====\n");
-    printk(KERN_WARNING "the request *f_pos is: %zu\n", *f_pos);
+    printk(KERN_WARNING "the request *f_pos is: %lld\n", *f_pos);
     printk(KERN_WARNING "the request count is: %zu\n", count);
     
     differences = *f_pos + count - dev->data_size;
@@ -410,7 +412,7 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
     printk(KERN_WARNING "the data size stored in device is %zu\n", dev->data_size);
     printk(KERN_WARNING "before writing, there are %d pages available\n", dev->num_pages);
     printk(KERN_WARNING "data need to write is count = %zu\n", count);
-    printk(KERN_WARNING "the *f_pos passed in is: %zu\n", *f_pos);
+    printk(KERN_WARNING "the *f_pos passed in is: %lld\n", *f_pos);
     
     allocate_new_pages_based_on(dev, unfinished, f_pos);
     
@@ -485,14 +487,14 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
     printk(KERN_WARNING "size_written = %zu\n", size_written);
 
     printk(KERN_WARNING "*f_pos += size_written\n");
-    printk(KERN_WARNING "*f_pos = %zu\n", *f_pos);
+    printk(KERN_WARNING "*f_pos = %lld\n", *f_pos);
     printk(KERN_WARNING "size_written = %zu\n", size_written);
-    *f_pos = *f_pos + 5;
+    *f_pos = *f_pos + size_written;
     printk(KERN_WARNING "So set *f_pos = %lld\n\n", *f_pos);
-    
-    printk(KERN_WARNING "filp->f_pos = %zu\n", filp->f_pos);
     printk(KERN_WARNING "dev->data_size = %zu\n", dev->data_size);
     printk(KERN_WARNING "orig_f_pos + size_written = %zu + %zu = %zu\n", orig_f_pos, size_written, orig_f_pos + size_written);
+    printk(KERN_WARNING "while dev->data_size = %zu\n", dev->data_size);
+    printk(KERN_WARNING "Since, dev->data_size = max(dev->data_size, orig_f_pos + size_written)");
     dev->data_size = max(dev->data_size, orig_f_pos + size_written);
     printk(KERN_WARNING "SO dev->data_size = %d\n", dev->data_size);
     printk(KERN_WARNING "\n\n\n");
