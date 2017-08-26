@@ -75,17 +75,16 @@ int asgn1_dev_count = 1;                  /* number of devices */
 void add_pages(asgn1_dev *asgn1_device_ptr, int num) {
     int i;
     
-    printk(KERN_WARNING "before adding pages, there are: %d pages\n", asgn1_device_ptr->num_pages);
-    
     for (i = 0; i < num; i++) {
         page_node *pg;
         pg = kmalloc(sizeof(struct page_node_rec), GFP_KERNEL);
         pg->page = alloc_page(GFP_KERNEL);
-        
+        printk(KERN_WARNING "before adding new page, dev->num_pages = %d\n", asgn1_device_ptr->num_pages);
         list_add_tail(&pg->list, &asgn1_device_ptr->mem_list);
-        asgn1_device_ptr->num_pages = num;
+        asgn1_device_ptr->num_pages += 1;
+        printk(KERN_WARNING "after adding new page, dev->num_pages = %d\n", asgn1_device_ptr->num_pages);
     }
-    printk(KERN_WARNING "after adding pages, there are: %d pages\n", asgn1_device_ptr->num_pages);
+    
 }
 
 
@@ -195,7 +194,7 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
     size_t offset;
     
     size_t unfinished;
-    size_t unfinished_recored;
+    size_t result;
     size_t finished;
     size_t total_finished;
     
@@ -224,7 +223,7 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
         ptr = ptr->next;
         curr_page_no += 1;
     }
-
+    
     
     /*check the limit of amount of work needed to be done*/
     if (*f_pos + count > dev->data_size) {
@@ -239,8 +238,8 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
     
     do {
         
-        offset = *f_pos % PAGE_SIZE;
         page_no = *f_pos / PAGE_SIZE;
+        offset = *f_pos % PAGE_SIZE;
         
         if (page_no != curr_page_no) {
             printk(KERN_WARNING "curr_page_no = %d, *f_pos / PAGE_SIZE = page_no = %d", curr_page_no, page_no);
@@ -250,17 +249,28 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
         }
         page_ptr = list_entry(ptr, page_node, list);
         
-        unfinished_recored = unfinished;
+    
         if (unfinished > PAGE_SIZE - offset) {
-            unfinished = copy_to_user(buf, (page_address(page_ptr->page) + offset), PAGE_SIZE - offset);
+            result = copy_to_user(buf, (page_address(page_ptr->page) + offset), PAGE_SIZE - offset);
+            finished = PAGE_SIZE - offset -result;
         } else {
-            unfinished = copy_to_user(buf, (page_address(page_ptr->page) + offset), unfinished);
+            result = copy_to_user(buf, (page_address(page_ptr->page) + offset), unfinished);
+            finished = unfinished - result;
         }
         
-        finished = unfinished_recored - unfinished;
-        printk(KERN_WARNING "finished = %d, unfinished = %d\n", finished, unfinished);
+        if (result < 0) {
+            break;
+        }
+        
         
         total_finished += finished;
+        unfinished -= finished;
+        
+        printk(KERN_WARNING "===processing_count = %d===\n");
+        printk(KERN_WARNING "finished = %d\n", finished);
+        printk(KERN_WARNING "unfinished = %d\n", unfinished);
+        printk(KERN_WARNING "total_finished = %d\n", total_finished);
+        printk(KERN_WARNING "\n");
         
         buf += finished;
         *f_pos += finished;
@@ -356,10 +366,12 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
     size_t offset;
     
     size_t unfinished;
-    size_t unfinished_recored;
+    size_t result;
     size_t finished;
     size_t total_finished;
+
     
+    /*page_no = *f_pos / PAGE_SIZE, while curr_page_no is used to track which page */
     int page_no;
     int curr_page_no;
     
@@ -367,6 +379,7 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
     struct list_head *ptr;
     struct page_node_rec *page_ptr;
     size_t orig_f_pos = *f_pos;
+    int processing_count = 0;
     
     dev = filp->private_data;
     ptr = dev->mem_list.next;
@@ -374,29 +387,37 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
     unfinished = count;
     total_finished = 0;
     
+    printk(KERN_WARNING "\n\n\n");
+    printk(KERN_WARNING "======WRITING========\n");
+    
+    page_no = *f_pos / PAGE_SIZE;
+    
     /*num_pages is indexed from 1, page_no is indexed from 0*/
     if (dev->num_pages < page_no + 1) {
+        printk(KERN_WARNING "because the page_no + 1 > dev->num_pages, we need to add %d new pages\n", page_no + 1 - dev->num_pages);
         add_pages(dev, page_no + 1 - dev->num_pages);
     }
-
+    
     /*find the starting page*/
     while (curr_page_no < page_no && curr_page_no <= dev->num_pages) {
         ptr = ptr->next;
         curr_page_no += 1;
     }
     
-    printk(KERN_WARNING "\n\n\n");
-    printk(KERN_WARNING "======WRITING========\n");
-    printk(KERN_WARNING "unfinished = %d\n", unfinished);
+
+    printk(KERN_WARNING "===unfinished = %d...===\n", unfinished);
     do {
         
         page_no = *f_pos / PAGE_SIZE;
-        offset = *f_pos / PAGE_SIZE;
-        
+        offset = *f_pos % PAGE_SIZE;
+    
+        printk(KERN_WARNING "curr_page_no = %d\n", curr_page_no);
+        printk(KERN_WARNING "page_no = %d\n", page_no);
+        printk(KERN_WARNING "*f_pos = %d\n", *f_pos);
+    
         if (page_no != curr_page_no && unfinished > 0) {
-            printk(KERN_WARNING "curr_page_no = %d, *f_pos / PAGE_SIZE = page_no = %d", curr_page_no, page_no);
-            printk(KERN_WARNING "add one new page\n");
-            add_pages(dev, 1);
+            printk(KERN_WARNING "page_no != curr_page_no && unfinished > 0, we need to add %d new pages\n", page_no - curr_page_no);
+            add_pages(dev, page_no - curr_page_no);
             ptr = ptr->next;
             curr_page_no += 1;
             printk(KERN_WARNING "go to next page: %d\n", curr_page_no);
@@ -404,22 +425,42 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
         
         page_ptr = list_entry(ptr, page_node, list);
         
-        unfinished_recored = unfinished;
+
         if (unfinished < PAGE_SIZE - offset) {
-            unfinished = copy_from_user(page_address(page_ptr->page) + offset, buf, unfinished);
+            printk(KERN_WARNING "processing %d amout of data(unfinished)\n", unfinished);
+            result = copy_from_user(page_address(page_ptr->page) + offset, buf, unfinished);
+            finished = unfinished - result;
         } else {
-            unfinished = copy_from_user(page_address(page_ptr->page) + offset, buf, PAGE_SIZE - offset);
+            printk(KERN_WARNING "processing %d amout of data(PAGE_SIZE - offset)\n", PAGE_SIZE - offset);
+            result = copy_from_user(page_address(page_ptr->page) + offset, buf, PAGE_SIZE - offset);
+            finished = PAGE_SIZE - offset - result;
         }
         
-        finished = unfinished_recored - unfinished;
+        if (result < 0) {
+            break;
+        }
+        
+        processing_count += 1;
+        
+        unfinished -= finished;
         total_finished += finished;
+        
+        printk(KERN_WARNING "===processing_count = %d===\n");
+        printk(KERN_WARNING "finished = %d\n", finished);
+        printk(KERN_WARNING "unfinished = %d\n", unfinished);
+        printk(KERN_WARNING "total_finished = %d\n", total_finished);
+        printk(KERN_WARNING "\n");
+        
         buf += finished;
         *f_pos += finished;
         
+        if (dev->num_pages >= 10) {
+            printk(KERN_WARNING "dev->num_pages >= 10, something goes wrong. break\n");
+            break;
+        }
     } while (unfinished > 0);
     
-    dev->data_size = max(dev->data_size, orig_f_pos + finished);
-    
+    dev->data_size = max(dev->data_size, orig_f_pos + total_finished);
     printk(KERN_WARNING "===END of WRITING, return %d===\n", total_finished);
     printk(KERN_WARNING "\n\n\n");
     return total_finished;
