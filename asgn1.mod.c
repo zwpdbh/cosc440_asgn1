@@ -18,7 +18,12 @@ static const struct modversion_info ____versions[]
 __used
 __attribute__((section("__versions"))) = {
 	{ 0x4cd667c1, __VMLINUX_SYMBOL_STR(module_layout) },
+	{ 0xe2b77c92, __VMLINUX_SYMBOL_STR(seq_release) },
+	{ 0x4273b3a, __VMLINUX_SYMBOL_STR(seq_read) },
+	{ 0xc5bced1a, __VMLINUX_SYMBOL_STR(seq_lseek) },
+	{ 0xb830ec02, __VMLINUX_SYMBOL_STR(remove_proc_entry) },
 	{ 0x573a869c, __VMLINUX_SYMBOL_STR(device_destroy) },
+	{ 0xaede3d98, __VMLINUX_SYMBOL_STR(proc_create_data) },
 	{ 0x5a041bb8, __VMLINUX_SYMBOL_STR(class_destroy) },
 	{ 0x17b37d38, __VMLINUX_SYMBOL_STR(device_create) },
 	{ 0x7485e15e, __VMLINUX_SYMBOL_STR(unregister_chrdev_region) },
@@ -36,6 +41,8 @@ __attribute__((section("__versions"))) = {
 	{ 0xdfc98939, __VMLINUX_SYMBOL_STR(__alloc_pages_nodemask) },
 	{ 0xce23173e, __VMLINUX_SYMBOL_STR(kmem_cache_alloc_trace) },
 	{ 0x440473b8, __VMLINUX_SYMBOL_STR(kmalloc_caches) },
+	{ 0xefe13262, __VMLINUX_SYMBOL_STR(seq_open) },
+	{ 0x32653dd7, __VMLINUX_SYMBOL_STR(seq_printf) },
 	{ 0xf4fa543b, __VMLINUX_SYMBOL_STR(arm_copy_to_user) },
 	{ 0x49bbd46f, __VMLINUX_SYMBOL_STR(mem_map) },
 	{ 0x27e1a049, __VMLINUX_SYMBOL_STR(printk) },
@@ -49,4 +56,4 @@ __attribute__((section(".modinfo"))) =
 "depends=";
 
 
-MODULE_INFO(srcversion, "CBE3CCE226FFEDF5AD8DC14");
+MODULE_INFO(srcversion, "A5D714EBE56F953963AC27C");

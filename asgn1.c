@@ -68,6 +68,7 @@ int asgn1_major = 0;                      /* major number of module */
 int asgn1_minor = 0;                      /* minor number of module */
 int asgn1_dev_count = 1;                  /* number of devices */
 
+struct proc_dir_entry *proc;                /*for proc entry*/
 
 /**
  * Helper function which add a page and set the data_size
@@ -79,6 +80,7 @@ void add_pages(asgn1_dev *dev, int num) {
         page_node *pg;
         pg = kmalloc(sizeof(struct page_node_rec), GFP_KERNEL);
         pg->page = alloc_page(GFP_KERNEL);
+        INIT_LIST_HEAD(&pg->list);
         printk(KERN_WARNING "before adding new page, dev->num_pages = %d\n", dev->num_pages);
         list_add_tail(&pg->list, &dev->mem_list);
         dev->num_pages += 1;
@@ -129,24 +131,23 @@ int asgn1_open(struct inode *inode, struct file *filp) {
      * if opened in write-only mode, free all memory pages
      *
      */
-    struct asgn1_dev_t *dev;
+    //struct asgn1_dev_t *dev;
     int nprocs;
     int max_nprocs;
     
-    dev = container_of(inode->i_cdev, struct asgn1_dev_t, cdev);
-    filp->private_data = dev;
+    //dev = container_of(inode->i_cdev, struct asgn1_dev_t, cdev);
+    //filp->private_data = dev;
     
-    atomic_inc(&dev->nprocs);
-    
-    nprocs = atomic_read(&dev->nprocs);
-    max_nprocs = atomic_read(&dev->max_nprocs);
-    
+    atomic_inc(&asgn1_device.nprocs);
+
+    nprocs = atomic_read(&asgn1_device.nprocs);
+    max_nprocs = atomic_read(&asgn1_device.max_nprocs);    
     if (nprocs > max_nprocs) {
         return -EBUSY;
     }
     
     if (filp->f_mode == FMODE_WRITE) {
-        free_memory_pages(dev);
+        free_memory_pages(&asgn1_device);
     }
     
     return 0; /* success */
@@ -162,11 +163,10 @@ int asgn1_release (struct inode *inode, struct file *filp) {
     /**
      * decrement process count
      */
-    struct asgn1_dev_t *dev = filp->private_data;
     
-    atomic_sub(1, &dev->nprocs);
+    atomic_sub(1, &asgn1_device.nprocs);
     printk(KERN_WARNING "In release:\n");
-    printk(KERN_WARNING "the dev->data_size = %d\n", dev->data_size);
+    printk(KERN_WARNING "the data_size = %d\n", asgn1_device.data_size);
     printk(KERN_WARNING "=======END====\n");
     printk(KERN_WARNING "\n\n\n");
     
@@ -191,18 +191,21 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
     int page_no;
     int curr_page_no;
     
-    struct asgn1_dev_t *dev;
     struct list_head *ptr;
     struct page_node_rec *page_ptr;
     
-    dev = filp->private_data;
-    ptr = dev->mem_list.next;
+    //dev = filp->private_data;
+    ptr = asgn1_device.mem_list.next;
     
     total_finished = 0;
     int processing_count = 1;
     
+    printk(KERN_WARNING "\n\n\n");
+    printk(KERN_WARNING "======READING========\n");
+    printk(KERN_WARNING "*f_pos = %ld\n", (long) *f_pos);
+    
     /*if the seeking position is bigger than the data_size, return 0*/
-    if (*f_pos >= dev->data_size) {
+    if (*f_pos >= asgn1_device.data_size) {
         return 0;
     }
     
@@ -210,21 +213,20 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
     curr_page_no = 0;
     
     /*find the starting page*/
-    while (curr_page_no < page_no && curr_page_no <= dev->num_pages) {
+    while (curr_page_no < page_no && curr_page_no <= asgn1_device.num_pages) {
         ptr = ptr->next;
         curr_page_no += 1;
     }
     
     
     /*check the limit of amount of work needed to be done*/
-    if (*f_pos + count > dev->data_size) {
-        unfinished = dev->data_size - *f_pos;
+    if (*f_pos + count > asgn1_device.data_size) {
+        unfinished = asgn1_device.data_size - *f_pos;
     } else {
         unfinished = count;
     }
     
-    printk(KERN_WARNING "\n\n\n");
-    printk(KERN_WARNING "======READING========\n");
+    
     printk(KERN_WARNING "unfinished = %d\n", unfinished);
     
     do {
@@ -266,7 +268,7 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
         buf += finished;
         *f_pos += finished;
         processing_count += 1;
-    } while (unfinished >0 && curr_page_no <= dev->num_pages);
+    } while (unfinished >0);
     
     printk(KERN_WARNING "===END of READING, return %d===\n", total_finished);
     printk(KERN_WARNING "\n\n\n");
@@ -280,8 +282,7 @@ static loff_t asgn1_lseek (struct file *file, loff_t offset, int whence)
     loff_t newpos = 0;
     
     //    size_t buffer_size = asgn1_device.num_pages * PAGE_SIZE;
-    struct asgn1_dev_t *dev = file->private_data;
-    size_t buffer_size = dev->num_pages * PAGE_SIZE;
+    size_t buffer_size = asgn1_device.num_pages * PAGE_SIZE;
     
     /* COMPLETE ME */
     /**
@@ -303,7 +304,7 @@ static loff_t asgn1_lseek (struct file *file, loff_t offset, int whence)
             break;
             
         case SEEK_END:
-            newpos = dev->data_size + offset;
+            newpos = asgn1_device.data_size + offset;
             break;
         default:
             break;
@@ -319,32 +320,6 @@ static loff_t asgn1_lseek (struct file *file, loff_t offset, int whence)
 }
 
 
-
-void allocate_new_pages_based_on(struct asgn1_dev_t *dev, size_t count, loff_t *f_pos) {
-    int num_pages_needed_allocate;
-    size_t differences;
-    
-    printk(KERN_WARNING "=======preparing writing=====\n");
-    printk(KERN_WARNING "the request *f_pos is: %lld\n", *f_pos);
-    printk(KERN_WARNING "the request count is: %zu\n", count);
-    
-    differences = *f_pos + count - dev->data_size;
-    printk(KERN_WARNING "the differences between need and already have is: %zu\n", differences);
-    
-    if (differences > 0) {
-        num_pages_needed_allocate = differences / PAGE_SIZE;
-        printk(KERN_WARNING "the pages needed to allocate is: %d\n", num_pages_needed_allocate);
-        
-        if (dev->num_pages == 0 && num_pages_needed_allocate == 0) {
-            printk(KERN_WARNING "we will allocate: %d pages\n", 1);
-            add_pages(dev, 1);
-        } else if (num_pages_needed_allocate > 0) {
-            printk(KERN_WARNING "we will allocate: %d pages\n", num_pages_needed_allocate + 1);
-            add_pages(dev, num_pages_needed_allocate + 1);
-        }
-    }
-    
-}
 
 
 
@@ -367,15 +342,15 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
     int page_no;
     int curr_page_no;
     
-    struct asgn1_dev_t *dev;
+    //struct asgn1_dev_t *dev;
     struct list_head *ptr;
     struct page_node_rec *page_ptr;
     size_t orig_f_pos = *f_pos;
     int processing_count = 1;
     
     
-    dev = filp->private_data;
-    ptr = dev->mem_list.next;
+    //dev = filp->private_data;
+    ptr = asgn1_device.mem_list.next;
     
     unfinished = count;
     total_finished = 0;
@@ -387,13 +362,13 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
     curr_page_no = 0;
     
     /*num_pages is indexed from 1, page_no is indexed from 0*/
-    if (dev->num_pages < page_no + 1) {
-        printk(KERN_WARNING "because the page_no + 1 > dev->num_pages, we need to add %d new pages\n", page_no + 1 - dev->num_pages);
-        add_pages(dev, page_no + 1 - dev->num_pages);
+    if (asgn1_device.num_pages < page_no + 1) {
+        printk(KERN_WARNING "because the page_no + 1 > dev->num_pages, we need to add %d new pages\n", page_no + 1 - asgn1_device.num_pages);
+        add_pages(&asgn1_device, page_no + 1 - asgn1_device.num_pages);
     }
     
     /*find the starting page*/
-    while (curr_page_no < page_no && curr_page_no <= dev->num_pages) {
+    while (curr_page_no < page_no && curr_page_no <= asgn1_device.num_pages) {
         ptr = ptr->next;
         curr_page_no += 1;
     }
@@ -411,7 +386,7 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
         
         if (page_no != curr_page_no && unfinished > 0) {
             printk(KERN_WARNING "page_no != curr_page_no && unfinished > 0, we need to add %d new pages\n", page_no - curr_page_no);
-            add_pages(dev, page_no - curr_page_no);
+            add_pages(&asgn1_device, page_no - curr_page_no);
             ptr = ptr->next;
             curr_page_no += 1;
             printk(KERN_WARNING "go to next page: %d\n", curr_page_no);
@@ -448,13 +423,13 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
         buf += finished;
         *f_pos += finished;
         
-        if (dev->num_pages >= 10) {
+        if (asgn1_device.num_pages >= 10) {
             printk(KERN_WARNING "dev->num_pages >= 10, something goes wrong. break\n");
             break;
         }
     } while (unfinished > 0);
     
-    dev->data_size = max(dev->data_size, orig_f_pos + total_finished);
+    asgn1_device.data_size = max(asgn1_device.data_size, orig_f_pos + total_finished);
     printk(KERN_WARNING "===END of WRITING, return %d===\n", total_finished);
     printk(KERN_WARNING "\n\n\n");
     return total_finished;
@@ -485,25 +460,27 @@ long asgn1_ioctl (struct file *filp, unsigned cmd, unsigned long arg) {
 }
 
 
-static int asgn1_mmap (struct file *filp, struct vm_area_struct *vma)
-{
-    unsigned long pfn;
-    unsigned long offset = vma->vm_pgoff << PAGE_SHIFT;
-    unsigned long len = vma->vm_end - vma->vm_start;
-    unsigned long ramdisk_size = asgn1_device.num_pages * PAGE_SIZE;
-    page_node *curr;
-    unsigned long index = 0;
-    
-    /* COMPLETE ME */
-    /**
-     * check offset and len
-     *
-     * loop through the entire page list, once the first requested page
-     *   reached, add each page with remap_pfn_range one by one
-     *   up to the last requested page
-     */
-    return 0;
-}
+//static int asgn1_mmap (struct file *filp, struct vm_area_struct *vma)
+//{
+//    unsigned long pfn;
+//    unsigned long offset = vma->vm_pgoff << PAGE_SHIFT;
+//    unsigned long len = vma->vm_end - vma->vm_start;
+//    unsigned long ramdisk_size = asgn1_device.num_pages * PAGE_SIZE;
+//    page_node *curr;
+//    unsigned long index = 0;
+//    
+//    /* COMPLETE ME */
+//    /**
+//     * check offset and len
+//     *
+//     * loop through the entire page list, once the first requested page
+//     *   reached, add each page with remap_pfn_range one by one
+//     *   up to the last requested page
+//     */
+//    return 0;
+//}
+
+
 
 // the method this driver support
 struct file_operations asgn1_fops = {
@@ -512,61 +489,67 @@ struct file_operations asgn1_fops = {
     .write = asgn1_write,
     .unlocked_ioctl = asgn1_ioctl,
     .open = asgn1_open,
-    .mmap = asgn1_mmap,
+//    .mmap = asgn1_mmap,
     .release = asgn1_release,
     .llseek = asgn1_lseek
 };
 
 
-//struct file_operations asgn1_proc_ops = {
-//    .owner = THIS_MODULE,
-//    .open = my_proc_open,
-//    .llseek = seq_lseek,
-//    .read = seq_read,
-//    .release = seq_release,
-//};
-//
-//static struct seq_operations my_seq_ops = {
-//    .start = my_seq_start,
-//    .next = my_seq_next,
-//    .stop = my_seq_stop,
-//    .show = my_seq_show
-//};
+static void *my_seq_start(struct seq_file *s, loff_t *pos)
+{
+    if(*pos >= 1) return NULL;
+    else return &asgn1_dev_count + *pos;
+}
+
+static void *my_seq_next(struct seq_file *s, void *v, loff_t *pos)
+{
+    (*pos)++;
+    if(*pos >= 1) return NULL;
+    else return &asgn1_dev_count + *pos;
+}
+
+static void my_seq_stop(struct seq_file *s, void *v)
+{
+    /* There's nothing to do here! */
+}
+
+int my_seq_show(struct seq_file *s, void *v) {
+    /* COMPLETE ME */
+    /**
+     * use seq_printf to print some info to s
+     */
+    
+    seq_printf(s, "dev->nprocs = %d\n", atomic_read(&asgn1_device.nprocs));
+    seq_printf(s, "dev->max_nprocs = %d\n", atomic_read(&asgn1_device.max_nprocs));
+    seq_printf(s, "dev->num_pages = %d\n", asgn1_device.num_pages);
+    seq_printf(s, "dev->data_size = %d\n", asgn1_device.data_size);
+    
+    return 0;
+}
 
 
-//static void *my_seq_start(struct seq_file *s, loff_t *pos)
-//{
-//    if(*pos >= 1) return NULL;
-//    else return &asgn1_dev_count + *pos;
-//}
-//
-//static void *my_seq_next(struct seq_file *s, void *v, loff_t *pos)
-//{
-//    (*pos)++;
-//    if(*pos >= 1) return NULL;
-//    else return &asgn1_dev_count + *pos;
-//}
-//
-//static void my_seq_stop(struct seq_file *s, void *v)
-//{
-//    /* There's nothing to do here! */
-//}
-//
-//int my_seq_show(struct seq_file *s, void *v) {
-//    /* COMPLETE ME */
-//    /**
-//     * use seq_printf to print some info to s
-//     */
-//    return 0;
-//
-//
-//}
+static struct seq_operations my_seq_ops = {
+    .start = my_seq_start,
+    .next = my_seq_next,
+    .stop = my_seq_stop,
+    .show = my_seq_show
+};
 
-//static int my_proc_open(struct inode *inode, struct file *filp)
-//{
-//    return seq_open(filp, &my_seq_ops);
-//}
 
+static int my_proc_open(struct inode *inode, struct file *filp)
+{
+    return seq_open(filp, &my_seq_ops);
+}
+
+
+
+struct file_operations asgn1_proc_ops = {
+    .owner = THIS_MODULE,
+    .open = my_proc_open,
+    .llseek = seq_lseek,
+    .read = seq_read,
+    .release = seq_release,
+};
 
 
 /**
@@ -626,6 +609,9 @@ int __init asgn1_init_module(void){
         return rv;
     }
     
+    /*create proc entry*/
+    proc = proc_create_data(MYDEV_NAME, 0, NULL, &asgn1_proc_ops, NULL);
+    
     printk(KERN_WARNING "\n\n\n");
     printk(KERN_WARNING "===Create %s driver succeed.===\n", MYDEV_NAME);
     
@@ -645,8 +631,9 @@ void __exit asgn1_exit_module(void){
     /* call this cause error...
      * cdev_del(asgn1_device.cdev);
      */
+    remove_proc_entry(MYDEV_NAME, NULL);
     unregister_chrdev_region(MKDEV(asgn1_major, 0), 1);
-    printk(KERN_WARNING "===GOOD BYE from %d===\n", MYDEV_NAME);
+    printk(KERN_WARNING "===GOOD BYE from %s===\n", MYDEV_NAME);
     
 }
 
