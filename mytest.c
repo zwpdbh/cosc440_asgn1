@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 char *buffer;
-int length = 5000;
+int length = 50000;
 void setBuf(char c) {
     memset(buffer, c, length);
     buffer[length - 1] = '\0';
@@ -36,7 +36,8 @@ int main(int argc, char *argv[]) {
     lseek(fd, 0, SEEK_SET);
     rc = read(fd, buffer, length);
     printf("buffer after read: %s\n", buffer);
-    
+    rc=read(fd,buffer,length);
+    printf("buffer after read %s\n",buffer);
     
     close(fd);
     
