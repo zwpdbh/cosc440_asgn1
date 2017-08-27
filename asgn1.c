@@ -35,7 +35,7 @@
 #define MYIOC_TYPE 'k'
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Your Name");
+MODULE_AUTHOR("Zhao Wei");
 MODULE_DESCRIPTION("COSC440 asgn1");
 
 
@@ -214,7 +214,7 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
     page_no = *f_pos / PAGE_SIZE;
     curr_page_no = 0;
     
-    /*find the starting page*/
+    /*make sure the current operating page is the page computed from *f_pos / PAGE_SIZE*/
     while (curr_page_no < page_no) {
         ptr = ptr->next;
         curr_page_no += 1;
@@ -356,7 +356,9 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
     page_no = *f_pos / PAGE_SIZE;
     curr_page_no = 0;
     
-    /*num_pages is indexed from 1, page_no is indexed from 0*/
+    
+    /* to make the operating page match the *f_pos / PAGE_SIZE, add more page if needed. 
+    num_pages is indexed from 1, page_no is indexed from 0*/
     /*if (asgn1_device.num_pages - 1 < page_no) {
 	printk(KERN_WARNING "asgn1_device.num_pages = %d\n", asgn1_device.num_pages);
 	printk(KERN_WARNING "pagepage_no = *f_pos / PAGE_SIZE = %d\n", page_no);
@@ -364,10 +366,11 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
         add_pages(page_no + 1 - asgn1_device.num_pages);
     }
     */
-
+    /*if the *f_pos exceed the max limit, return 0*/
     if(*f_pos > asgn1_device.num_pages * PAGE_SIZE) {
     	return 0;
     }
+
     /*make sure the current operating page is the page computed from *f_pos*/
     while (curr_page_no < page_no&&ptr){
         ptr = ptr->next;
