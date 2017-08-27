@@ -73,7 +73,7 @@ struct proc_dir_entry *proc;                /*for proc entry*/
 /**
  * Helper function which add a page and set the data_size
  */
-void add_pages(asgn1_dev *dev, int num) {
+void add_pages(int num) {
     int i;
     
     for (i = 0; i < num; i++) {
@@ -81,10 +81,10 @@ void add_pages(asgn1_dev *dev, int num) {
         pg = kmalloc(sizeof(struct page_node_rec), GFP_KERNEL);
         pg->page = alloc_page(GFP_KERNEL);
         INIT_LIST_HEAD(&pg->list);
-        printk(KERN_WARNING "before adding new page, dev->num_pages = %d\n", dev->num_pages);
-        list_add_tail(&pg->list, &dev->mem_list);
-        dev->num_pages += 1;
-        printk(KERN_WARNING "after adding new page, dev->num_pages = %d\n", dev->num_pages);
+        printk(KERN_WARNING "before adding new page, num_pages = %d\n", asgn1_device.num_pages);
+        list_add_tail(&pg->list, &asgn1_device.mem_list);
+        asgn1_device.num_pages += 1;
+        printk(KERN_WARNING "after adding new page, num_pages = %d\n", asgn1_device.num_pages);
     }
     
 }
@@ -131,12 +131,12 @@ int asgn1_open(struct inode *inode, struct file *filp) {
      * if opened in write-only mode, free all memory pages
      *
      */
-    //struct asgn1_dev_t *dev;
+    struct asgn1_dev_t *dev;
     int nprocs;
     int max_nprocs;
     
-    //dev = container_of(inode->i_cdev, struct asgn1_dev_t, cdev);
-    //filp->private_data = dev;
+    dev = container_of(inode->i_cdev, struct asgn1_dev_t, cdev);
+    filp->private_data = dev;
     
     atomic_inc(&asgn1_device.nprocs);
 
@@ -163,13 +163,16 @@ int asgn1_release (struct inode *inode, struct file *filp) {
     /**
      * decrement process count
      */
-    
-    atomic_sub(1, &asgn1_device.nprocs);
+    if(atomic_read(&asgn1_device.nprocs) > 0) {
+    	atomic_sub(1, &asgn1_device.nprocs);
+    }	
+    /*
     printk(KERN_WARNING "In release:\n");
     printk(KERN_WARNING "the data_size = %d\n", asgn1_device.data_size);
     printk(KERN_WARNING "=======END====\n");
     printk(KERN_WARNING "\n\n\n");
     
+    */
     return 0;
 }
 
@@ -200,7 +203,6 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
     total_finished = 0;
     int processing_count = 1;
     
-    printk(KERN_WARNING "\n\n\n");
     printk(KERN_WARNING "======READING========\n");
     printk(KERN_WARNING "*f_pos = %ld\n", (long) *f_pos);
     
@@ -213,7 +215,7 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
     curr_page_no = 0;
     
     /*find the starting page*/
-    while (curr_page_no < page_no && curr_page_no <= asgn1_device.num_pages) {
+    while (curr_page_no < page_no) {
         ptr = ptr->next;
         curr_page_no += 1;
     }
@@ -244,10 +246,10 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
         
         
         if (unfinished > PAGE_SIZE - offset) {
-            result = copy_to_user(buf, (page_address(page_ptr->page) + offset), PAGE_SIZE - offset);
+            result = copy_to_user(buf + total_finished, (page_address(page_ptr->page) + offset), PAGE_SIZE - offset);
             finished = PAGE_SIZE - offset -result;
         } else {
-            result = copy_to_user(buf, (page_address(page_ptr->page) + offset), unfinished);
+            result = copy_to_user(buf + total_finished, (page_address(page_ptr->page) + offset), unfinished);
             finished = unfinished - result;
         }
         
@@ -265,7 +267,6 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
         printk(KERN_WARNING "total_finished = %d\n", total_finished);
         printk(KERN_WARNING "\n");
         
-        buf += finished;
         *f_pos += finished;
         processing_count += 1;
     } while (unfinished >0);
@@ -281,9 +282,6 @@ static loff_t asgn1_lseek (struct file *file, loff_t offset, int whence)
 {
     loff_t newpos = 0;
     
-    //    size_t buffer_size = asgn1_device.num_pages * PAGE_SIZE;
-    size_t buffer_size = asgn1_device.num_pages * PAGE_SIZE;
-    
     /* COMPLETE ME */
     /**
      * set testpos according to the command
@@ -298,18 +296,16 @@ static loff_t asgn1_lseek (struct file *file, loff_t offset, int whence)
         case SEEK_SET:
             newpos = offset;
             break;
-            
         case SEEK_CUR:
             newpos = file->f_pos + offset;
-            break;
-            
+            break;            
         case SEEK_END:
             newpos = asgn1_device.data_size + offset;
             break;
         default:
             break;
     }
-    if (newpos < 0 || newpos > buffer_size) {
+    if (newpos < 0 || newpos > asgn1_device.num_pages * PAGE_SIZE) {
         return -EINVAL;
     } else {
         file->f_pos = newpos;
@@ -343,37 +339,44 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
     int curr_page_no;
     
     //struct asgn1_dev_t *dev;
+    //dev = filp->private_data;
     struct list_head *ptr;
     struct page_node_rec *page_ptr;
     size_t orig_f_pos = *f_pos;
-    int processing_count = 1;
+    int processing_count = 0;
     
     
-    //dev = filp->private_data;
     ptr = asgn1_device.mem_list.next;
     
     unfinished = count;
     total_finished = 0;
     
-    printk(KERN_WARNING "\n\n\n");
     printk(KERN_WARNING "======WRITING========\n");
-    
+    /*initializ*/ 
     page_no = *f_pos / PAGE_SIZE;
     curr_page_no = 0;
     
     /*num_pages is indexed from 1, page_no is indexed from 0*/
-    if (asgn1_device.num_pages < page_no + 1) {
-        printk(KERN_WARNING "because the page_no + 1 > dev->num_pages, we need to add %d new pages\n", page_no + 1 - asgn1_device.num_pages);
-        add_pages(&asgn1_device, page_no + 1 - asgn1_device.num_pages);
+    /*if (asgn1_device.num_pages - 1 < page_no) {
+	printk(KERN_WARNING "asgn1_device.num_pages = %d\n", asgn1_device.num_pages);
+	printk(KERN_WARNING "pagepage_no = *f_pos / PAGE_SIZE = %d\n", page_no);
+        printk(KERN_WARNING "because (asgn1_device.num_pages - 1 < page_no), we need to add %d new pages\n", page_no + 1 - asgn1_device.num_pages);
+        add_pages(page_no + 1 - asgn1_device.num_pages);
     }
-    
-    /*find the starting page*/
-    while (curr_page_no < page_no && curr_page_no <= asgn1_device.num_pages) {
+    */
+
+    if(*f_pos > asgn1_device.num_pages * PAGE_SIZE) {
+    	return 0;
+    }
+    /*make sure the current operating page is the page computed from *f_pos*/
+    while (curr_page_no < page_no&&ptr){
         ptr = ptr->next;
-        curr_page_no += 1;
+        
+	
+	curr_page_no += 1;
+
     }
-    
-    
+	
     printk(KERN_WARNING "===unfinished = %d...===\n", (int)unfinished);
     do {
         
@@ -382,26 +385,25 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
         
         printk(KERN_WARNING "curr_page_no = %d\n", curr_page_no);
         printk(KERN_WARNING "page_no = %d\n", page_no);
-        printk(KERN_WARNING "*f_pos = %ld\n", (long)*f_pos);
+       // printk(KERN_WARNING "*f_pos = %ld\n", (long)*f_pos);
         
-        if (page_no != curr_page_no && unfinished > 0) {
+        if (page_no > curr_page_no && unfinished > 0) {
             printk(KERN_WARNING "page_no != curr_page_no && unfinished > 0, we need to add %d new pages\n", page_no - curr_page_no);
-            add_pages(&asgn1_device, page_no - curr_page_no);
+            add_pages(page_no - curr_page_no);
             ptr = ptr->next;
             curr_page_no += 1;
             printk(KERN_WARNING "go to next page: %d\n", curr_page_no);
         }
         
         page_ptr = list_entry(ptr, page_node, list);
-        
-        
+         
         if (unfinished < PAGE_SIZE - offset) {
-            printk(KERN_WARNING "processing %d amout of data(unfinished)\n", unfinished);
-            result = copy_from_user(page_address(page_ptr->page) + offset, buf, unfinished);
+            printk(KERN_WARNING "processing %ld amout of data(unfinished)\n", unfinished);
+            result = copy_from_user(page_address(page_ptr->page) + offset, buf + total_finished, unfinished);
             finished = unfinished - result;
         } else {
-            printk(KERN_WARNING "processing %d amout of data(PAGE_SIZE - offset)\n", (int)(PAGE_SIZE - offset));
-            result = copy_from_user(page_address(page_ptr->page) + offset, buf, PAGE_SIZE - offset);
+            printk(KERN_WARNING "processing %ld amout of data(PAGE_SIZE - offset)\n", (long)(PAGE_SIZE - offset));
+            result = copy_from_user(page_address(page_ptr->page) + offset, buf + total_finished, PAGE_SIZE - offset);
             finished = PAGE_SIZE - offset - result;
         }
         
@@ -420,7 +422,6 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
         printk(KERN_WARNING "total_finished = %d\n", total_finished);
         printk(KERN_WARNING "\n");
         
-        buf += finished;
         *f_pos += finished;
         
         if (asgn1_device.num_pages >= 10) {
@@ -441,6 +442,7 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
 
 /**
  * The ioctl function, which nothing needs to be done in this case.
+ * 
  */
 long asgn1_ioctl (struct file *filp, unsigned cmd, unsigned long arg) {
     int nr;
@@ -455,7 +457,23 @@ long asgn1_ioctl (struct file *filp, unsigned cmd, unsigned long arg) {
      set max_nprocs accordingly, don't forget to check validity of the
      value before setting max_nprocs
      */
-    
+    if(_IOC_TYPE(cmd) != MYIOC_TYPE) {
+        return -EINVAL;
+    }
+    switch (cmd) {
+        case SET_NPROC_OP:
+            result=copy_from_user((int*)&new_nprocs,(int*)arg,sizeof(int));
+            
+            if(result!=0) return -EINVAL;
+            if(new_nprocs > atomic_read(&asgn1_device.nprocs)){
+                atomic_set(&asgn1_device.max_nprocs, new_nprocs);
+                return 0;
+            }
+            break;
+            
+        default:
+            break;
+    }
     return -ENOTTY;
 }
 
@@ -626,11 +644,10 @@ void __exit asgn1_exit_module(void){
     device_destroy(asgn1_device.class, MKDEV(asgn1_major, 0));
     class_destroy(asgn1_device.class);
     free_memory_pages(&asgn1_device);
-    kfree(asgn1_device.cdev);
     
-    /* call this cause error...
-     * cdev_del(asgn1_device.cdev);
-     */
+    cdev_del(asgn1_device.cdev);
+    kfree(asgn1_device.cdev);
+
     remove_proc_entry(MYDEV_NAME, NULL);
     unregister_chrdev_region(MKDEV(asgn1_major, 0), 1);
     printk(KERN_WARNING "===GOOD BYE from %s===\n", MYDEV_NAME);
