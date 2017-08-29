@@ -166,13 +166,7 @@ int asgn1_release (struct inode *inode, struct file *filp) {
     if(atomic_read(&asgn1_device.nprocs) > 0) {
         atomic_sub(1, &asgn1_device.nprocs);
     }
-    /*
-     printk(KERN_WARNING "In release:\n");
-     printk(KERN_WARNING "the data_size = %d\n", asgn1_device.data_size);
-     printk(KERN_WARNING "=======END====\n");
-     printk(KERN_WARNING "\n\n\n");
      
-     */
     return 0;
 }
 
@@ -247,15 +241,8 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
             break;
         }
         
-        
         total_finished += finished;
         unfinished -= finished;
-        
-        printk(KERN_WARNING "===processing_count = %d===\n", processing_count);
-        printk(KERN_WARNING "finished = %d\n", finished);
-        printk(KERN_WARNING "unfinished = %d\n", unfinished);
-        printk(KERN_WARNING "total_finished = %d\n", total_finished);
-        printk(KERN_WARNING "\n");
         
         *f_pos += finished;
         processing_count += 1;
@@ -357,16 +344,6 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
     offset = *f_pos % PAGE_SIZE;
     curr_page_no = 0;
     
-    
-    /* to make the operating page match the *f_pos / PAGE_SIZE, add more page if needed.
-     num_pages is indexed from 1, page_no is indexed from 0*/
-    /*if (asgn1_device.num_pages - 1 < page_no) {
-     printk(KERN_WARNING "asgn1_device.num_pages = %d\n", asgn1_device.num_pages);
-     printk(KERN_WARNING "pagepage_no = *f_pos / PAGE_SIZE = %d\n", page_no);
-     printk(KERN_WARNING "because (asgn1_device.num_pages - 1 < page_no), we need to add %d new pages\n", page_no + 1 - asgn1_device.num_pages);
-     add_pages(page_no + 1 - asgn1_device.num_pages);
-     }
-     */
     /*if the *f_pos exceed the max limit, return 0*/
     if(*f_pos > asgn1_device.num_pages * PAGE_SIZE) {
         printk(KERN_WARNING "*f_pos > asgn1_device.num_pages * PAGE_SIZE ?\n");
@@ -487,7 +464,6 @@ static int asgn1_mmap (struct file *filp, struct vm_area_struct *vma)
     
     /*the page frame number is simply the physical address right-shifted by PAGE_SHIFT bits*/
     unsigned long offset = vma->vm_pgoff << PAGE_SHIFT;
-    
     unsigned long len = vma->vm_end - vma->vm_start;
     unsigned long ramdisk_size = asgn1_device.num_pages * PAGE_SIZE;
     page_node *curr;
@@ -529,8 +505,6 @@ static int asgn1_mmap (struct file *filp, struct vm_area_struct *vma)
 }
 
 
-
-// the method this driver support
 struct file_operations asgn1_fops = {
     .owner = THIS_MODULE,
     .read = asgn1_read,
@@ -622,7 +596,7 @@ int __init asgn1_init_module(void){
     if (rv < 0) {
         return rv;
     }
-    
+    /*Initialize each fields of asgn1_device*/    
     memset(&asgn1_device, 0, sizeof(struct asgn1_dev_t));
     asgn1_device.cdev = kmalloc(sizeof(struct cdev), GFP_KERNEL);
     cdev_init(asgn1_device.cdev, &asgn1_fops);
