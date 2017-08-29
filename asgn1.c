@@ -139,9 +139,9 @@ int asgn1_open(struct inode *inode, struct file *filp) {
     filp->private_data = dev;
     
     atomic_inc(&asgn1_device.nprocs);
-
+    
     nprocs = atomic_read(&asgn1_device.nprocs);
-    max_nprocs = atomic_read(&asgn1_device.max_nprocs);    
+    max_nprocs = atomic_read(&asgn1_device.max_nprocs);
     if (nprocs > max_nprocs) {
         return -EBUSY;
     }
@@ -164,15 +164,15 @@ int asgn1_release (struct inode *inode, struct file *filp) {
      * decrement process count
      */
     if(atomic_read(&asgn1_device.nprocs) > 0) {
-    	atomic_sub(1, &asgn1_device.nprocs);
-    }	
+        atomic_sub(1, &asgn1_device.nprocs);
+    }
     /*
-    printk(KERN_WARNING "In release:\n");
-    printk(KERN_WARNING "the data_size = %d\n", asgn1_device.data_size);
-    printk(KERN_WARNING "=======END====\n");
-    printk(KERN_WARNING "\n\n\n");
-    
-    */
+     printk(KERN_WARNING "In release:\n");
+     printk(KERN_WARNING "the data_size = %d\n", asgn1_device.data_size);
+     printk(KERN_WARNING "=======END====\n");
+     printk(KERN_WARNING "\n\n\n");
+     
+     */
     return 0;
 }
 
@@ -212,6 +212,7 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
     }
     
     page_no = *f_pos / PAGE_SIZE;
+    offset = *f_pos % PAGE_SIZE;
     curr_page_no = 0;
     
     /*make sure the current operating page is the page computed from *f_pos / PAGE_SIZE*/
@@ -232,18 +233,7 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
     printk(KERN_WARNING "unfinished = %d\n", unfinished);
     
     do {
-        
-        page_no = *f_pos / PAGE_SIZE;
-        offset = *f_pos % PAGE_SIZE;
-        
-        if (page_no != curr_page_no) {
-            printk(KERN_WARNING "curr_page_no = %d, *f_pos / PAGE_SIZE = page_no = %d", curr_page_no, page_no);
-            ptr = ptr->next;
-            curr_page_no += 1;
-            printk(KERN_WARNING "go to next page: %d\n", curr_page_no);
-        }
         page_ptr = list_entry(ptr, page_node, list);
-        
         
         if (unfinished > PAGE_SIZE - offset) {
             result = copy_to_user(buf + total_finished, (page_address(page_ptr->page) + offset), PAGE_SIZE - offset);
@@ -269,6 +259,16 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
         
         *f_pos += finished;
         processing_count += 1;
+        
+        page_no = *f_pos / PAGE_SIZE;
+        offset = *f_pos % PAGE_SIZE;
+        
+        if (page_no != curr_page_no) {
+            printk(KERN_WARNING "curr_page_no = %d, *f_pos / PAGE_SIZE = page_no = %d", curr_page_no, page_no);
+            ptr = ptr->next;
+            curr_page_no += 1;
+            printk(KERN_WARNING "go to next page: %d\n", curr_page_no);
+        }
     } while (unfinished >0);
     
     printk(KERN_WARNING "===END of READING, return %d===\n", total_finished);
@@ -298,7 +298,7 @@ static loff_t asgn1_lseek (struct file *file, loff_t offset, int whence)
             break;
         case SEEK_CUR:
             newpos = file->f_pos + offset;
-            break;            
+            break;
         case SEEK_END:
             newpos = asgn1_device.data_size + offset;
             break;
@@ -352,54 +352,40 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
     total_finished = 0;
     
     printk(KERN_WARNING "======WRITING========\n");
-    /*initializ*/ 
+    /*initializ*/
     page_no = *f_pos / PAGE_SIZE;
+    offset = *f_pos % PAGE_SIZE;
     curr_page_no = 0;
     
     
-    /* to make the operating page match the *f_pos / PAGE_SIZE, add more page if needed. 
-    num_pages is indexed from 1, page_no is indexed from 0*/
+    /* to make the operating page match the *f_pos / PAGE_SIZE, add more page if needed.
+     num_pages is indexed from 1, page_no is indexed from 0*/
     /*if (asgn1_device.num_pages - 1 < page_no) {
-	printk(KERN_WARNING "asgn1_device.num_pages = %d\n", asgn1_device.num_pages);
-	printk(KERN_WARNING "pagepage_no = *f_pos / PAGE_SIZE = %d\n", page_no);
-        printk(KERN_WARNING "because (asgn1_device.num_pages - 1 < page_no), we need to add %d new pages\n", page_no + 1 - asgn1_device.num_pages);
-        add_pages(page_no + 1 - asgn1_device.num_pages);
-    }
-    */
+     printk(KERN_WARNING "asgn1_device.num_pages = %d\n", asgn1_device.num_pages);
+     printk(KERN_WARNING "pagepage_no = *f_pos / PAGE_SIZE = %d\n", page_no);
+     printk(KERN_WARNING "because (asgn1_device.num_pages - 1 < page_no), we need to add %d new pages\n", page_no + 1 - asgn1_device.num_pages);
+     add_pages(page_no + 1 - asgn1_device.num_pages);
+     }
+     */
     /*if the *f_pos exceed the max limit, return 0*/
     if(*f_pos > asgn1_device.num_pages * PAGE_SIZE) {
-    	return 0;
+        printk(KERN_WARNING "*f_pos > asgn1_device.num_pages * PAGE_SIZE ?\n");
+        printk(KERN_WARNING "*fpos = %ld\n", (long)*f_pos);
+        printk(KERN_WARNING "asgn1_device.num_pages = %d\n", asgn1_device.num_pages);
+        printk(KERN_WARNING "asgn1_device.num_pages * PAGE_SIZE = %ld\n", (long)asgn1_device.num_pages * PAGE_SIZE);
+        return 0;
     }
-
+    
     /*make sure the current operating page is the page computed from *f_pos*/
     while (curr_page_no < page_no&&ptr){
         ptr = ptr->next;
-        
-	
-	curr_page_no += 1;
-
+        curr_page_no += 1;
     }
-	
+    
     printk(KERN_WARNING "===unfinished = %d...===\n", (int)unfinished);
     do {
-        
-        page_no = *f_pos / PAGE_SIZE;
-        offset = *f_pos % PAGE_SIZE;
-        
-        printk(KERN_WARNING "curr_page_no = %d\n", curr_page_no);
-        printk(KERN_WARNING "page_no = %d\n", page_no);
-       // printk(KERN_WARNING "*f_pos = %ld\n", (long)*f_pos);
-        
-        if (page_no > curr_page_no && unfinished > 0) {
-            printk(KERN_WARNING "page_no != curr_page_no && unfinished > 0, we need to add %d new pages\n", page_no - curr_page_no);
-            add_pages(page_no - curr_page_no);
-            ptr = ptr->next;
-            curr_page_no += 1;
-            printk(KERN_WARNING "go to next page: %d\n", curr_page_no);
-        }
-        
         page_ptr = list_entry(ptr, page_node, list);
-         
+        
         if (unfinished < PAGE_SIZE - offset) {
             printk(KERN_WARNING "processing %ld amout of data(unfinished)\n", unfinished);
             result = copy_from_user(page_address(page_ptr->page) + offset, buf + total_finished, unfinished);
@@ -427,15 +413,27 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
         
         *f_pos += finished;
         
-        if (asgn1_device.num_pages >= 10) {
-            printk(KERN_WARNING "dev->num_pages >= 10, something goes wrong. break\n");
-            break;
+        page_no = *f_pos / PAGE_SIZE;
+        offset = *f_pos % PAGE_SIZE;
+        
+        printk(KERN_WARNING "curr_page_no = %d\n", curr_page_no);
+        printk(KERN_WARNING "page_no = %d\n", page_no);
+        // printk(KERN_WARNING "*f_pos = %ld\n", (long)*f_pos);
+        
+        if (page_no > curr_page_no) {
+            printk(KERN_WARNING "page_no != curr_page_no && unfinished > 0, we need to add %d new pages\n", page_no - curr_page_no);
+            add_pages(page_no - curr_page_no);
+            ptr = ptr->next;
+            curr_page_no += 1;
+            printk(KERN_WARNING "go to next page: %d\n", curr_page_no);
         }
+        
     } while (unfinished > 0);
     
     asgn1_device.data_size = max(asgn1_device.data_size, orig_f_pos + total_finished);
     printk(KERN_WARNING "===END of WRITING, return %d===\n", total_finished);
     printk(KERN_WARNING "\n\n\n");
+    
     return total_finished;
     
 }
@@ -445,7 +443,7 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
 
 /**
  * The ioctl function, which nothing needs to be done in this case.
- * 
+ *
  */
 long asgn1_ioctl (struct file *filp, unsigned cmd, unsigned long arg) {
     int nr;
@@ -463,7 +461,9 @@ long asgn1_ioctl (struct file *filp, unsigned cmd, unsigned long arg) {
     if(_IOC_TYPE(cmd) != MYIOC_TYPE) {
         return -EINVAL;
     }
-    switch (cmd) {
+    nr = _IOC_NR(cmd);
+
+    switch (nr) {
         case SET_NPROC_OP:
             result=copy_from_user((int*)&new_nprocs,(int*)arg,sizeof(int));
             
@@ -481,25 +481,52 @@ long asgn1_ioctl (struct file *filp, unsigned cmd, unsigned long arg) {
 }
 
 
-//static int asgn1_mmap (struct file *filp, struct vm_area_struct *vma)
-//{
-//    unsigned long pfn;
-//    unsigned long offset = vma->vm_pgoff << PAGE_SHIFT;
-//    unsigned long len = vma->vm_end - vma->vm_start;
-//    unsigned long ramdisk_size = asgn1_device.num_pages * PAGE_SIZE;
-//    page_node *curr;
-//    unsigned long index = 0;
-//    
-//    /* COMPLETE ME */
-//    /**
-//     * check offset and len
-//     *
-//     * loop through the entire page list, once the first requested page
-//     *   reached, add each page with remap_pfn_range one by one
-//     *   up to the last requested page
-//     */
-//    return 0;
-//}
+static int asgn1_mmap (struct file *filp, struct vm_area_struct *vma)
+{
+    unsigned long pfn;
+    
+    /*the page frame number is simply the physical address right-shifted by PAGE_SHIFT bits*/
+    unsigned long offset = vma->vm_pgoff << PAGE_SHIFT;
+    
+    unsigned long len = vma->vm_end - vma->vm_start;
+    unsigned long ramdisk_size = asgn1_device.num_pages * PAGE_SIZE;
+    page_node *curr;
+    unsigned long index = 0;
+    
+    /* COMPLETE ME */
+    /**
+     * check offset and len
+     *
+     * loop through the entire page list, once the first requested page
+     *   reached, add each page with remap_pfn_range one by one
+     *   up to the last requested page
+     */
+    printk(KERN_WARNING "invoking mmap function\n");
+    printk(KERN_WARNING "offset = %ld\n", offset);
+    printk(KERN_WARNING "len = %ld\n", len);
+    printk(KERN_WARNING "ramdisk_size = %ld\n", ramdisk_size);
+    
+    if (offset * PAGE_SIZE + len > ramdisk_size) {
+        return -1;
+    }
+    
+    list_for_each_entry(curr, &asgn1_device.mem_list, list) {
+        printk(KERN_WARNING "looping until reach the offset page\n");
+        if (index >= offset) {
+            pfn = page_to_pfn(curr->page);
+            
+            if (PAGE_SIZE * (index - offset) >= len) {
+                return 0;
+            }
+            
+            if (remap_pfn_range(vma, vma->vm_start + PAGE_SIZE * (index - offset), pfn, PAGE_SIZE, vma->vm_page_prot)) {
+                return -EAGAIN;
+            }
+        }
+        index += 1;
+    }
+    return 0;
+}
 
 
 
@@ -510,7 +537,7 @@ struct file_operations asgn1_fops = {
     .write = asgn1_write,
     .unlocked_ioctl = asgn1_ioctl,
     .open = asgn1_open,
-//    .mmap = asgn1_mmap,
+    .mmap = asgn1_mmap,
     .release = asgn1_release,
     .llseek = asgn1_lseek
 };
@@ -650,7 +677,7 @@ void __exit asgn1_exit_module(void){
     
     cdev_del(asgn1_device.cdev);
     kfree(asgn1_device.cdev);
-
+    
     remove_proc_entry(MYDEV_NAME, NULL);
     unregister_chrdev_region(MKDEV(asgn1_major, 0), 1);
     printk(KERN_WARNING "===GOOD BYE from %s===\n", MYDEV_NAME);
@@ -660,3 +687,4 @@ void __exit asgn1_exit_module(void){
 
 module_init(asgn1_init_module);
 module_exit(asgn1_exit_module);
+
