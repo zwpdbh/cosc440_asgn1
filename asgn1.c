@@ -381,15 +381,14 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
         page_index = *f_pos / PAGE_SIZE;
         offset = *f_pos % PAGE_SIZE;
         
-        printk(KERN_WARNING "curr_page_index = %d\n", curr_page_index);
-        printk(KERN_WARNING "page_index = %d\n", page_index);
         printk(KERN_WARNING "offset = %d\n", offset);
+        printk(KERN_WARNING "page_index = *f_pos / PAGE_SIZE = %d\n", page_index);
         
         // printk(KERN_WARNING "*f_pos = %ld\n", (long)*f_pos);
         
-        if (page_index > curr_page_index) {
-            printk(KERN_WARNING "page_no != curr_page_index && unfinished > 0, we need to add %d new pages\n", page_index - curr_page_index);
-            add_pages(page_index - curr_page_index);
+        if (page_index + 1 > asgn1_device.num_pages) {
+            printk(KERN_WARNING "page_index = %d, while asgn1_device.num_pages = %d, need to add a new page.\n", page_index,  asgn1_device.num_pages);
+            add_pages(1);
             ptr = ptr->next;
             curr_page_index += 1;
             printk(KERN_WARNING "go to next page: %d\n", curr_page_index);
