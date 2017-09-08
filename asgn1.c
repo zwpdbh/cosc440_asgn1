@@ -352,7 +352,7 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
     if (page_no >= asgn1_device.num_pages) {
         printk(KERN_WARNING "request page_no is: %d\n", page_no);
         printk(KERN_WARNING "currently, there are: %d pages\n", asgn1_device.num_pages);
-        printk(KERN_WARNING "need to add %d pages\n", page_no - asgn1_device.num_pages);
+        printk(KERN_WARNING "need to add %d pages\n", page_no - asgn1_device.num_pages + 1);
         add_pages(page_no - asgn1_device.num_pages + 1);
     }
     
