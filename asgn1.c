@@ -210,19 +210,18 @@ ssize_t asgn1_read(struct file *filp, char __user *buf, size_t count,
     offset = *f_pos % PAGE_SIZE;
     curr_page_index = 0;
     
-    ptr = asgn1_device.mem_list.next;
-    /*make sure the current operating page is the page computed from *f_pos / PAGE_SIZE*/
-    while (curr_page_index < page_index) {
-        ptr = ptr->next;
-        curr_page_index += 1;
-    }
-    
-    
     /*check the limit of amount of work needed to be done*/
     if (*f_pos + count > asgn1_device.data_size) {
         unfinished = asgn1_device.data_size - *f_pos;
     } else {
         unfinished = count;
+    }
+    
+    ptr = asgn1_device.mem_list.next;
+    /*make sure the current operating page is the page computed from *f_pos / PAGE_SIZE*/
+    while (curr_page_index < page_index) {
+        ptr = ptr->next;
+        curr_page_index += 1;
     }
     
     
@@ -382,13 +381,17 @@ ssize_t asgn1_write(struct file *filp, const char __user *buf, size_t count, lof
         offset = *f_pos % PAGE_SIZE;
         
         printk(KERN_WARNING "offset = %d\n", offset);
+        printk(KERN_WARNING "*f_pos = %ld\n", (long int)*f_pos);
         printk(KERN_WARNING "page_index = *f_pos / PAGE_SIZE = %d\n", page_index);
-        
-        // printk(KERN_WARNING "*f_pos = %ld\n", (long)*f_pos);
         
         if (page_index + 1 > asgn1_device.num_pages) {
             printk(KERN_WARNING "page_index = %d, while asgn1_device.num_pages = %d, need to add a new page.\n", page_index,  asgn1_device.num_pages);
             add_pages(1);
+            ptr = ptr->next;
+            curr_page_index += 1;
+            printk(KERN_WARNING "go to next page: %d\n", curr_page_index);
+        } else if (page_index + 1 <= asgn1_device.num_pages && page_index > curr_page_index) {
+            printk(KERN_WARNING "page_index = %d, while curr_page_index = %d, need to move to next page.\n", page_index, curr_page_index);
             ptr = ptr->next;
             curr_page_index += 1;
             printk(KERN_WARNING "go to next page: %d\n", curr_page_index);
